@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: backlog-webhook-lambda
+
+Globals:
+  Function:
+    Timeout: 180
+    MemorySize: 512
+
+Resources:
+  WebhookLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: backlog-webhook-lambda
+      CodeUri: app/
+      Handler: app.lambda_handler
+      Runtime: python3.10
+      Architectures:
+        - x86_64
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: ['s3:PutObject', 's3:PutObjectVersion']
+              Resource: !Sub 'arn:aws:s3:::${SourceCodeBucket}/*'
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents']
+              Resource: '*'
+
+  WebhookLambdaFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref WebhookLambda
+      AuthType: NONE
+      Cors:
+        AllowMethods: ['GET', 'POST']
+        AllowOrigins: ['*']
+
+  SourceCodeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-git-source-bucket
+      VersioningConfiguration:
+        Status: Enabled
+
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${SourceCodeBucket}/*'
+
+#  CodePipeline:
+#    Type: AWS::CodePipeline::Pipeline
+#    # CodePipeline 的具体配置需要根据你的需求定制
+
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 's3:PutObject'
+                Resource: '*'
+
+#  CodeBuild:
+#    Type: AWS::CodeBuild::Project
+#    # CodeBuild 的具体配置需要根据你的需求定制
+
+Outputs:
+  WebhookLambdaEndpoint:
+    Description: "Webhook Lambda Function URL"
+    Value: !GetAtt WebhookLambdaFunctionUrl.FunctionUrl
